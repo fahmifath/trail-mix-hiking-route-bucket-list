@@ -26,43 +26,36 @@ function announce(text: string): void {
   requestAnimationFrame(() => { region.textContent = text; });
 }
 
-function reportFailure(message: string): void {
-  const banner = $("storage-banner");
-  banner.hidden = false;
-  banner.textContent = message;
-  announce(`Error: ${message}`);
-}
-function clearBanner(): void {
-  const banner = $("storage-banner");
-  banner.hidden = true;
-  banner.textContent = "";
+function setBanner(msg = ""): void {
+  const b = $("storage-banner");
+  b.hidden = !msg;
+  b.textContent = msg;
+  if (msg) announce(`Error: ${msg}`);
 }
 
 export function init(): void {
   const r = load();
-  if (r.status === "ok" || r.status === "empty") {
-    items = r.status === "ok" ? r.items : [];
-    clearBanner();
-  } else {
-    items = r.status === "partial" ? r.items : [];
-    reportFailure(r.message);
-  }
+  items = r.status === "ok" || r.status === "partial" ? r.items : [];
+  setBanner(r.status === "partial" || r.status === "error" ? r.message : "");
   wireEvents();
   render();
 }
 
-function clearDeleteArm(): void {
-  if (armedDeleteTimer !== null) { clearTimeout(armedDeleteTimer); armedDeleteTimer = null; }
-  armedDeleteId = null;
-}
-function revertDeleteButton(btn: HTMLButtonElement): void {
-  btn.textContent = "Delete";
-  btn.setAttribute("aria-label", "Delete trail");
-  btn.classList.remove("btn-arm");
+function resetDeleteArm(msg?: string): void {
+  if (armedDeleteTimer) { clearTimeout(armedDeleteTimer); armedDeleteTimer = null; }
+  if (armedDeleteId) {
+    document.querySelectorAll(".btn-arm").forEach((b) => {
+      b.textContent = "Delete";
+      b.setAttribute("aria-label", "Delete trail");
+      b.classList.remove("btn-arm");
+    });
+    armedDeleteId = null;
+  }
+  if (msg) announce(msg);
 }
 
 function render(): void {
-  clearDeleteArm();
+  resetDeleteArm();
   const filtered = filterItems(items, filterQuery);
   const sorted = sortItems(filtered);
   renderSummary();
@@ -72,8 +65,8 @@ function render(): void {
 
 function renderSummary(): void {
   const s = summarize(items);
-  $("summary-total").textContent = String(s.total);
-  $("summary-completed").textContent = String(s.completed);
+  $("summary-total").textContent = `${s.total}`;
+  $("summary-completed").textContent = `${s.completed}`;
   $("summary-distance").textContent = `${s.totalDistance} ${s.unit}`;
 }
 
@@ -88,9 +81,7 @@ function renderList(sorted: Trail[], isEmpty: boolean, isFilterEmpty: boolean): 
     return;
   }
   emptyFilter.hidden = true;
-  if (!isEmpty) {
-    for (const trail of sorted) list.appendChild(createCard(trail));
-  }
+  if (!isEmpty) for (const trail of sorted) list.appendChild(createCard(trail));
 }
 
 function createCard(trail: Trail): HTMLElement {
@@ -108,7 +99,7 @@ function createCard(trail: Trail): HTMLElement {
 
   const meta = el("div", "card-meta");
   const loc = el("span", "card-loc");
-  loc.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg> `;
+  loc.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg> `;
   loc.appendChild(document.createTextNode(trail.location));
   meta.append(loc, el("span", "card-dist", formatDistance(trail.distance, trail.unit)), el("span", "card-date", formatDate(trail.createdAt)));
 
@@ -117,12 +108,13 @@ function createCard(trail: Trail): HTMLElement {
     const b = el("button", cls, txt);
     b.type = "button";
     b.setAttribute("aria-label", label);
-    b.addEventListener("click", () => fn(b));
+    b.onclick = () => fn(b);
     return b;
   };
+  const toggleTxt = isDone ? "Mark Pending" : "Mark Complete";
   actions.append(
     btn("btn btn-secondary", "Edit", `Edit ${trail.name}`, () => startEdit(trail.id)),
-    btn("btn btn-ghost", isDone ? "Mark Pending" : "Mark Complete", isDone ? `Mark ${trail.name} pending` : `Mark ${trail.name} complete`, () => toggleStatus(trail.id)),
+    btn("btn btn-ghost", toggleTxt, `${toggleTxt} ${trail.name}`, () => toggleStatus(trail.id)),
     btn("btn btn-danger", "Delete", `Delete ${trail.name}`, (b) => handleDelete(trail.id, b))
   );
 
@@ -143,101 +135,83 @@ function renderFormState(): void {
   if (isEditing) {
     const t = items.find((x) => x.id === editingId);
     if (t) {
-      fld(form, "name").value = t.name;
-      fld(form, "location").value = t.location;
+      for (const k of ["name", "location", "unit", "difficulty", "notes", "status"] as const) fld(form, k).value = t[k];
       fld(form, "distance").value = String(t.distance);
-      fld(form, "unit").value = t.unit;
-      fld(form, "difficulty").value = t.difficulty;
-      (form.elements.namedItem("notes") as HTMLTextAreaElement).value = t.notes;
-      fld(form, "status").value = t.status;
     }
   } else {
     form.reset();
-    clearFieldErrors();
+    setErrors();
   }
 }
 
 function wireEvents(): void {
   const form = $("trail-form") as HTMLFormElement;
-  form.addEventListener("submit", (e) => { e.preventDefault(); handleFormSubmit(form); });
-  $("cancel-edit-btn").addEventListener("click", () => { editingId = null; render(); announce("Edit cancelled."); });
-  $("search-input").addEventListener("input", (e) => {
+  form.onsubmit = (e) => { e.preventDefault(); handleFormSubmit(form); };
+  const on = (id: string, ev: string, fn: (e: Event) => void) => $(id).addEventListener(ev, fn);
+
+  on("cancel-edit-btn", "click", () => { editingId = null; render(); announce("Edit cancelled."); });
+  on("search-input", "input", (e) => {
     filterQuery = (e.target as HTMLInputElement).value;
     render();
     if (filterQuery && filterItems(items, filterQuery).length === 0) announce(`No trails found for "${filterQuery}".`);
   });
-  $("clear-filter-btn").addEventListener("click", () => {
+  on("clear-filter-btn", "click", () => {
     filterQuery = "";
     ($("search-input") as HTMLInputElement).value = "";
     render();
     announce("Filter cleared.");
   });
-  $("dismiss-banner-btn").addEventListener("click", clearBanner);
+  on("dismiss-banner-btn", "click", () => setBanner());
+
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && armedDeleteId !== null) {
-      document.querySelectorAll(".btn-arm").forEach((b) => revertDeleteButton(b as HTMLButtonElement));
-      clearDeleteArm();
-      announce("Delete cancelled.");
-    }
+    if (e.key === "Escape") resetDeleteArm("Delete cancelled.");
   });
   document.addEventListener("click", (e) => {
-    if (armedDeleteId === null) return;
-    if (!(e.target as HTMLElement).closest(`[data-id="${armedDeleteId}"] .btn-danger`)) {
-      document.querySelectorAll(".btn-arm").forEach((b) => revertDeleteButton(b as HTMLButtonElement));
-      clearDeleteArm();
+    if (armedDeleteId && !(e.target as HTMLElement).closest(`[data-id="${armedDeleteId}"] .btn-danger`)) {
+      resetDeleteArm();
     }
   });
 }
 
-function clearFieldErrors(): void {
-  document.querySelectorAll(".field-error").forEach((e) => { (e as HTMLElement).textContent = ""; });
-  document.querySelectorAll("[aria-invalid]").forEach((e) => { e.removeAttribute("aria-invalid"); });
-}
-
-function showFieldErrors(errors: Record<string, string>): void {
-  clearFieldErrors();
-  for (const [field, msg] of Object.entries(errors)) {
-    const errEl = $(`${field}-error`);
-    if (errEl) errEl.textContent = msg;
-    const inputEl = document.querySelector(`[name="${field}"]`) as HTMLElement | null;
-    if (inputEl) inputEl.setAttribute("aria-invalid", "true");
+function setErrors(errors: Record<string, string> = {}): void {
+  document.querySelectorAll(".field-error").forEach((e) => { e.textContent = ""; });
+  document.querySelectorAll("[aria-invalid]").forEach((e) => e.removeAttribute("aria-invalid"));
+  for (const [k, v] of Object.entries(errors)) {
+    const err = $(`${k}-error`);
+    if (err) err.textContent = v;
+    document.querySelector(`[name="${k}"]`)?.setAttribute("aria-invalid", "true");
   }
   const first = Object.values(errors)[0];
   if (first) announce(`Validation error: ${first}`);
 }
 
-function commitItems(next: Trail[], msg: string, callback?: () => void): boolean {
+function commitItems(next: Trail[], msg: string, cb?: () => void): boolean {
   const res = save(next);
-  if (!res.ok) { reportFailure(res.message ?? "Could not save."); return false; }
+  if (!res.ok) { setBanner(res.message ?? "Could not save."); return false; }
   items = next;
-  callback?.();
+  cb?.();
   render();
   announce(msg);
   return true;
 }
 
 function handleFormSubmit(form: HTMLFormElement): void {
+  const v = (n: string) => fld(form, n).value;
   const input: TrailInput = {
-    name: fld(form, "name").value,
-    location: fld(form, "location").value,
-    distance: fld(form, "distance").value,
-    unit: fld(form, "unit").value,
-    difficulty: fld(form, "difficulty").value,
-    notes: (form.elements.namedItem("notes") as HTMLTextAreaElement).value,
-    status: fld(form, "status").value,
+    name: v("name"), location: v("location"), distance: v("distance"),
+    unit: v("unit"), difficulty: v("difficulty"), notes: (form.elements.namedItem("notes") as HTMLTextAreaElement).value,
+    status: v("status"),
   };
-  const result = validate(input);
-  if (!result.ok) {
-    showFieldErrors(result.errors as Record<string, string>);
-    return;
-  }
-  clearFieldErrors();
+  const res = validate(input);
+  if (!res.ok) { setErrors(res.errors as Record<string, string>); return; }
+  setErrors();
 
   if (editingId !== null) {
-    const updated = createItem(input, editingId, items.find((t) => t.id === editingId)?.createdAt ?? new Date().toISOString());
+    const orig = items.find((t) => t.id === editingId);
+    const updated = createItem(input, editingId, orig?.createdAt ?? new Date().toISOString());
     commitItems(items.map((t) => (t.id === editingId ? updated : t)), `Trail "${updated.name}" updated successfully.`, () => { editingId = null; });
   } else {
-    const id = `trail-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const id = `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const newTrail = createItem(input, id, new Date().toISOString());
     commitItems([...items, newTrail], `Trail "${newTrail.name}" added to your list.`, () => {
       setTimeout(() => document.querySelector(`[data-id="${id}"]`)?.classList.add("card-enter"), 0);
@@ -273,19 +247,12 @@ function handleDelete(id: string, btn: HTMLButtonElement): void {
       if (editingId === id) editingId = null;
     });
   } else {
-    if (armedDeleteId !== null) {
-      document.querySelectorAll(".btn-arm").forEach((b) => revertDeleteButton(b as HTMLButtonElement));
-      clearDeleteArm();
-    }
+    resetDeleteArm();
     armedDeleteId = id;
     btn.textContent = "Confirm?";
     btn.setAttribute("aria-label", "Confirm delete — click again to confirm");
     btn.classList.add("btn-arm");
-    armedDeleteTimer = setTimeout(() => {
-      revertDeleteButton(btn);
-      clearDeleteArm();
-      announce("Delete cancelled.");
-    }, 3000);
+    armedDeleteTimer = setTimeout(() => resetDeleteArm("Delete cancelled."), 3000);
     announce("Delete armed. Click again to confirm, or press Escape to cancel.");
   }
 }

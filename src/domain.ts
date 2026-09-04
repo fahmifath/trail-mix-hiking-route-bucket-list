@@ -17,27 +17,10 @@ export interface Trail {
   createdAt: string;
 }
 
-export interface ValidationErrors {
-  name?: string;
-  location?: string;
-  distance?: string;
-  difficulty?: string;
-  unit?: string;
-}
-
-export interface ValidationResult {
-  ok: boolean;
-  errors: ValidationErrors;
-}
-
+export type ValidationErrors = Partial<Record<"name" | "location" | "distance" | "difficulty" | "unit", string>>;
+export interface ValidationResult { ok: boolean; errors: ValidationErrors; }
 export interface TrailInput {
-  name: string;
-  location: string;
-  distance: string;
-  unit: string;
-  difficulty: string;
-  notes: string;
-  status: string;
+  name: string; location: string; distance: string; unit: string; difficulty: string; notes: string; status: string;
 }
 
 export function validate(input: TrailInput): ValidationResult {
@@ -78,40 +61,35 @@ export function createItem(input: TrailInput, id: string, now: string): Trail {
 export function normalize(raw: unknown): Trail | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const r = raw as Record<string, unknown>;
+  const s = (k: string) => typeof r[k] === "string" ? (r[k] as string) : "";
   const input: TrailInput = {
-    name: typeof r.name === "string" ? r.name : "",
-    location: typeof r.location === "string" ? r.location : "",
+    name: s("name"),
+    location: s("location"),
     distance: typeof r.distance === "number" ? String(r.distance) : String(r.distance ?? ""),
-    unit: typeof r.unit === "string" ? r.unit : "",
-    difficulty: typeof r.difficulty === "string" ? r.difficulty : "",
-    notes: typeof r.notes === "string" ? r.notes : "",
-    status: typeof r.status === "string" ? r.status : "want",
+    unit: s("unit"),
+    difficulty: s("difficulty"),
+    notes: s("notes"),
+    status: s("status") || "want",
   };
-  if (!validate(input).ok) return null;
-  const id = typeof r.id === "string" && r.id.trim() ? r.id : "";
-  if (!id) return null;
-  return createItem(input, id, typeof r.createdAt === "string" ? r.createdAt : new Date().toISOString());
+  if (!validate(input).ok || typeof r.id !== "string" || !r.id.trim()) return null;
+  return createItem(input, r.id, s("createdAt") || new Date().toISOString());
 }
 
-export function filterItems(items: Trail[], query: string): Trail[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return items;
-  return items.filter((t) => t.name.toLowerCase().includes(q) || t.location.toLowerCase().includes(q) || t.notes.toLowerCase().includes(q));
-}
+export const filterItems = (items: Trail[], q: string): Trail[] => {
+  const s = q.trim().toLowerCase();
+  return s ? items.filter((t) => (t.name + " " + t.location + " " + t.notes).toLowerCase().includes(s)) : items;
+};
 
-export function sortItems(items: Trail[]): Trail[] {
-  return [...items].sort((a, b) => a.status !== b.status ? (a.status === "want" ? -1 : 1) : a.name.localeCompare(b.name));
-}
+export const sortItems = (items: Trail[]): Trail[] =>
+  [...items].sort((a, b) => a.status !== b.status ? (a.status === "want" ? -1 : 1) : a.name.localeCompare(b.name));
 
-export function formatDistance(distance: number, unit: Unit): string {
-  const d = Number.isInteger(distance) ? distance : parseFloat(distance.toFixed(1));
-  return `${d} ${unit}`;
-}
+export const formatDistance = (d: number, u: Unit): string =>
+  `${Number.isInteger(d) ? d : parseFloat(d.toFixed(1))} ${u}`;
 
-export function formatDate(iso: string): string {
+export const formatDate = (iso: string): string => {
   const d = new Date(iso);
   return isNaN(d.getTime()) ? "Unknown date" : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
+};
 
 export interface Summary {
   total: number;
@@ -123,7 +101,7 @@ export interface Summary {
 export function summarize(items: Trail[]): Summary {
   const done = items.filter((t) => t.status === "completed");
   const mixed = done.length > 0 && done.some((t) => t.unit !== done[0].unit);
-  const unit = mixed ? "mi" : done.length > 0 ? done[0].unit : "mi";
+  const unit = mixed ? "mi" : done[0]?.unit ?? "mi";
   const dist = done.reduce((sum, t) => sum + (t.unit === unit ? t.distance : t.unit === "km" ? t.distance * 0.621371 : t.distance / 0.621371), 0);
   return { total: items.length, completed: done.length, totalDistance: parseFloat(dist.toFixed(1)), unit };
 }
