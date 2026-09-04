@@ -10,6 +10,7 @@ let filterQuery = "";
 let editingId: string | null = null;
 let armedDeleteId: string | null = null;
 let armedDeleteTimer: ReturnType<typeof setTimeout> | null = null;
+let busy = false;
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -30,7 +31,14 @@ function setBanner(msg = ""): void {
   const b = $("storage-banner");
   b.hidden = !msg;
   b.textContent = msg;
+  delete b.dataset.ok;
   if (msg) announce(`Error: ${msg}`);
+}
+
+function setSuccess(m: string): void {
+  const b = $("storage-banner");
+  b.hidden = false; b.textContent = m; b.dataset.ok = "";
+  announce(m);
 }
 
 export function init(): void {
@@ -48,8 +56,8 @@ function resetDeleteArm(msg?: string): void {
       b.textContent = "Delete"; b.setAttribute("aria-label", "Delete trail"); b.classList.remove("btn-arm");
     });
     armedDeleteId = null;
+    if (msg) announce(msg);
   }
-  if (msg) announce(msg);
 }
 
 function render(): void {
@@ -184,15 +192,18 @@ function setErrors(errors: Record<string, string> = {}): void {
 
 function commitItems(next: Trail[], msg: string, cb?: () => void): boolean {
   const res = save(next);
-  if (!res.ok) { setBanner(res.message ?? "Could not save."); return false; }
+  if (!res.ok) { busy = false; setBanner(res.message ?? "Could not save."); return false; }
   items = next;
   cb?.();
+  busy = false;
   render();
-  announce(msg);
+  setSuccess(msg);
   return true;
 }
 
 function handleFormSubmit(form: HTMLFormElement): void {
+  if (busy) return;
+  busy = true;
   const v = (n: string) => fld(form, n).value;
   const input: TrailInput = {
     name: v("name"), location: v("location"), distance: v("distance"),
@@ -200,7 +211,7 @@ function handleFormSubmit(form: HTMLFormElement): void {
     status: v("status"),
   };
   const res = validate(input);
-  if (!res.ok) { setErrors(res.errors as Record<string, string>); return; }
+  if (!res.ok) { busy = false; setErrors(res.errors as Record<string, string>); return; }
   setErrors();
 
   if (editingId !== null) {

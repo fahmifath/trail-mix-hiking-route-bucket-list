@@ -103,3 +103,4 @@ body{font-family:var(--font-b);font-size:1rem;line-height:1.6;color:var(--bark);
 @media(prefers-reduced-motion:reduce) {
 *, *::before, *::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important;}
 }
+#storage-banner[data-ok]{background:#d1fae5;border-color:#6ee7b7;color:#065f46;}

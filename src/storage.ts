@@ -15,8 +15,9 @@ export function load(): LoadResult {
     try { p = JSON.parse(raw); } catch { return { status: "error", message: "Saved data could not be parsed. Starting fresh." }; }
     if (!Array.isArray(p)) return { status: "error", message: "Saved data has an unexpected format. Starting fresh." };
     const valid: Trail[] = [];
+    const now = new Date().toISOString();
     let bad = 0;
-    for (const x of p) { const t = normalize(x); if (t) valid.push(t); else bad++; }
+    for (const x of p) { const t = normalize(x, now); if (t) valid.push(t); else bad++; }
     if (!valid.length && !p.length) return { status: "empty" };
     if (bad > 0 && !valid.length) return { status: "error", message: `All ${bad} saved trail(s) were corrupted. Starting fresh.` };
     if (bad > 0) return { status: "partial", items: valid, message: `${bad} corrupted trail record(s) were removed.` };

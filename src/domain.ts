@@ -58,7 +58,7 @@ export function createItem(input: TrailInput, id: string, now: string): Trail {
   };
 }
 
-export function normalize(raw: unknown): Trail | null {
+export function normalize(raw: unknown, fd = ""): Trail | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const r = raw as Record<string, unknown>;
   const s = (k: string) => typeof r[k] === "string" ? (r[k] as string) : "";
@@ -72,7 +72,7 @@ export function normalize(raw: unknown): Trail | null {
     status: s("status") || "want",
   };
   if (!validate(input).ok || typeof r.id !== "string" || !r.id.trim()) return null;
-  return createItem(input, r.id, s("createdAt") || new Date().toISOString());
+  return createItem(input, r.id, s("createdAt") || fd);
 }
 
 export const filterItems = (items: Trail[], q: string): Trail[] => {
