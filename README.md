@@ -1,1 +1,0 @@
-# trail-mix-hiking-route-bucket-list
