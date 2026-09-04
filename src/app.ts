@@ -45,9 +45,7 @@ function resetDeleteArm(msg?: string): void {
   if (armedDeleteTimer) { clearTimeout(armedDeleteTimer); armedDeleteTimer = null; }
   if (armedDeleteId) {
     document.querySelectorAll(".btn-arm").forEach((b) => {
-      b.textContent = "Delete";
-      b.setAttribute("aria-label", "Delete trail");
-      b.classList.remove("btn-arm");
+      b.textContent = "Delete"; b.setAttribute("aria-label", "Delete trail"); b.classList.remove("btn-arm");
     });
     armedDeleteId = null;
   }
@@ -149,7 +147,7 @@ function wireEvents(): void {
   form.onsubmit = (e) => { e.preventDefault(); handleFormSubmit(form); };
   const on = (id: string, ev: string, fn: (e: Event) => void) => $(id).addEventListener(ev, fn);
 
-  on("cancel-edit-btn", "click", () => { editingId = null; render(); announce("Edit cancelled."); });
+  on("cancel-edit-btn", "click", () => { editingId = null; render(); announce("Edit cancelled"); });
   on("search-input", "input", (e) => {
     filterQuery = (e.target as HTMLInputElement).value;
     render();
@@ -158,8 +156,7 @@ function wireEvents(): void {
   on("clear-filter-btn", "click", () => {
     filterQuery = "";
     ($("search-input") as HTMLInputElement).value = "";
-    render();
-    announce("Filter cleared.");
+    render(); announce("Filter cleared");
   });
   on("dismiss-banner-btn", "click", () => setBanner());
 
@@ -250,9 +247,9 @@ function handleDelete(id: string, btn: HTMLButtonElement): void {
     resetDeleteArm();
     armedDeleteId = id;
     btn.textContent = "Confirm?";
-    btn.setAttribute("aria-label", "Confirm delete — click again to confirm");
+    btn.setAttribute("aria-label", "Confirm delete");
     btn.classList.add("btn-arm");
-    armedDeleteTimer = setTimeout(() => resetDeleteArm("Delete cancelled."), 3000);
-    announce("Delete armed. Click again to confirm, or press Escape to cancel.");
+    armedDeleteTimer = setTimeout(() => resetDeleteArm("Delete cancelled"), 3000);
+    announce("Delete armed — click again to confirm, Escape to cancel");
   }
 }
