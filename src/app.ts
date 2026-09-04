@@ -29,7 +29,7 @@ function announce(text: string): void {
 function reportFailure(message: string): void {
   const banner = $("storage-banner");
   banner.hidden = false;
-  requestAnimationFrame(() => { banner.textContent = message; });
+  banner.textContent = message;
   announce(`Error: ${message}`);
 }
 function clearBanner(): void {
@@ -39,16 +39,13 @@ function clearBanner(): void {
 }
 
 export function init(): void {
-  const result = load();
-  if (result.status === "ok" || result.status === "empty") {
-    items = result.status === "ok" ? result.items : [];
+  const r = load();
+  if (r.status === "ok" || r.status === "empty") {
+    items = r.status === "ok" ? r.items : [];
     clearBanner();
-  } else if (result.status === "partial") {
-    items = result.items;
-    reportFailure(result.message);
   } else {
-    items = [];
-    reportFailure(result.message);
+    items = r.status === "partial" ? r.items : [];
+    reportFailure(r.message);
   }
   wireEvents();
   render();
@@ -102,8 +99,10 @@ function createCard(trail: Trail): HTMLElement {
   card.dataset.id = trail.id;
 
   const badges = el("div", "card-badges");
-  badges.appendChild(el("span", `status-badge status-badge--${trail.status}`, isDone ? "✓ Completed" : "⛰ Want to Hike"));
-  badges.appendChild(el("span", `diff-badge diff-badge--${trail.difficulty}`, trail.difficulty));
+  badges.append(
+    el("span", `status-badge status-badge--${trail.status}`, isDone ? "✓ Completed" : "⛰ Want to Hike"),
+    el("span", `diff-badge diff-badge--${trail.difficulty}`, trail.difficulty)
+  );
 
   const title = el("h2", `card-title${isDone ? " card-title--done" : ""}`, trail.name);
 
@@ -111,27 +110,22 @@ function createCard(trail: Trail): HTMLElement {
   const loc = el("span", "card-loc");
   loc.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg> `;
   loc.appendChild(document.createTextNode(trail.location));
-  meta.appendChild(loc);
-  meta.appendChild(el("span", "card-dist", formatDistance(trail.distance, trail.unit)));
-  meta.appendChild(el("span", "card-date", formatDate(trail.createdAt)));
+  meta.append(loc, el("span", "card-dist", formatDistance(trail.distance, trail.unit)), el("span", "card-date", formatDate(trail.createdAt)));
 
   const actions = el("div", "card-actions");
-  const editBtn = el("button", "btn btn-secondary", "Edit");
-  editBtn.type = "button";
-  editBtn.setAttribute("aria-label", `Edit ${trail.name}`);
-  editBtn.addEventListener("click", () => startEdit(trail.id));
+  const btn = (cls: string, txt: string, label: string, fn: (b: HTMLButtonElement) => void) => {
+    const b = el("button", cls, txt);
+    b.type = "button";
+    b.setAttribute("aria-label", label);
+    b.addEventListener("click", () => fn(b));
+    return b;
+  };
+  actions.append(
+    btn("btn btn-secondary", "Edit", `Edit ${trail.name}`, () => startEdit(trail.id)),
+    btn("btn btn-ghost", isDone ? "Mark Pending" : "Mark Complete", isDone ? `Mark ${trail.name} pending` : `Mark ${trail.name} complete`, () => toggleStatus(trail.id)),
+    btn("btn btn-danger", "Delete", `Delete ${trail.name}`, (b) => handleDelete(trail.id, b))
+  );
 
-  const toggleBtn = el("button", "btn btn-ghost", isDone ? "Mark Pending" : "Mark Complete");
-  toggleBtn.type = "button";
-  toggleBtn.setAttribute("aria-label", isDone ? `Mark ${trail.name} pending` : `Mark ${trail.name} complete`);
-  toggleBtn.addEventListener("click", () => toggleStatus(trail.id));
-
-  const deleteBtn = el("button", "btn btn-danger", "Delete");
-  deleteBtn.type = "button";
-  deleteBtn.setAttribute("aria-label", `Delete ${trail.name}`);
-  deleteBtn.addEventListener("click", () => handleDelete(trail.id, deleteBtn));
-
-  actions.append(editBtn, toggleBtn, deleteBtn);
   card.append(badges, title, meta);
   if (trail.notes) card.appendChild(el("p", "card-notes", trail.notes));
   card.appendChild(actions);
@@ -212,6 +206,16 @@ function showFieldErrors(errors: Record<string, string>): void {
   if (first) announce(`Validation error: ${first}`);
 }
 
+function commitItems(next: Trail[], msg: string, callback?: () => void): boolean {
+  const res = save(next);
+  if (!res.ok) { reportFailure(res.message ?? "Could not save."); return false; }
+  items = next;
+  callback?.();
+  render();
+  announce(msg);
+  return true;
+}
+
 function handleFormSubmit(form: HTMLFormElement): void {
   const input: TrailInput = {
     name: fld(form, "name").value,
@@ -231,24 +235,13 @@ function handleFormSubmit(form: HTMLFormElement): void {
 
   if (editingId !== null) {
     const updated = createItem(input, editingId, items.find((t) => t.id === editingId)?.createdAt ?? new Date().toISOString());
-    const newItems = items.map((t) => (t.id === editingId ? updated : t));
-    const saveResult = save(newItems);
-    if (!saveResult.ok) { reportFailure(saveResult.message ?? "Could not save changes."); return; }
-    items = newItems;
-    editingId = null;
-    render();
-    announce(`Trail "${updated.name}" updated successfully.`);
+    commitItems(items.map((t) => (t.id === editingId ? updated : t)), `Trail "${updated.name}" updated successfully.`, () => { editingId = null; });
   } else {
     const id = `trail-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const newTrail = createItem(input, id, new Date().toISOString());
-    const newItems = [...items, newTrail];
-    const saveResult = save(newItems);
-    if (!saveResult.ok) { reportFailure(saveResult.message ?? "Could not save trail."); return; }
-    items = newItems;
-    render();
-    announce(`Trail "${newTrail.name}" added to your list.`);
-    const newCard = document.querySelector(`[data-id="${id}"]`);
-    if (newCard) newCard.classList.add("card-enter");
+    commitItems([...items, newTrail], `Trail "${newTrail.name}" added to your list.`, () => {
+      setTimeout(() => document.querySelector(`[data-id="${id}"]`)?.classList.add("card-enter"), 0);
+    });
   }
 }
 
@@ -265,32 +258,20 @@ function startEdit(id: string): void {
 function toggleStatus(id: string): void {
   const trail = items.find((t) => t.id === id);
   if (!trail) return;
-  const newStatus = trail.status === "want" ? "completed" : "want";
-  const updated = { ...trail, status: newStatus } as Trail;
-  const newItems = items.map((t) => (t.id === id ? updated : t));
-  const saveResult = save(newItems);
-  if (!saveResult.ok) { reportFailure(saveResult.message ?? "Could not update trail status."); return; }
-  items = newItems;
-  render();
-  announce(`"${trail.name}" marked as ${newStatus === "completed" ? "completed" : "want to hike"}.`);
+  const status = trail.status === "want" ? "completed" : "want";
+  const updated = { ...trail, status } as Trail;
+  commitItems(
+    items.map((t) => (t.id === id ? updated : t)),
+    `"${trail.name}" marked as ${status === "completed" ? "completed" : "want to hike"}.`
+  );
 }
 
 function handleDelete(id: string, btn: HTMLButtonElement): void {
   if (armedDeleteId === id) {
-    const trail = items.find((t) => t.id === id);
-    const name = trail?.name ?? "Trail";
-    const newItems = items.filter((t) => t.id !== id);
-    const saveResult = save(newItems);
-    if (!saveResult.ok) {
-      reportFailure(saveResult.message ?? "Could not delete trail.");
-      clearDeleteArm();
-      revertDeleteButton(btn);
-      return;
-    }
-    items = newItems;
-    if (editingId === id) editingId = null;
-    render();
-    announce(`Trail "${name}" deleted.`);
+    const name = items.find((t) => t.id === id)?.name ?? "Trail";
+    commitItems(items.filter((t) => t.id !== id), `Trail "${name}" deleted.`, () => {
+      if (editingId === id) editingId = null;
+    });
   } else {
     if (armedDeleteId !== null) {
       document.querySelectorAll(".btn-arm").forEach((b) => revertDeleteButton(b as HTMLButtonElement));

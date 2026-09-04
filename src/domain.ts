@@ -40,39 +40,24 @@ export interface TrailInput {
   status: string;
 }
 
-const MAX_NAME = 100;
-const MAX_LOCATION = 100;
-const MAX_NOTES = 500;
-const MAX_DISTANCE = 9999;
-
 export function validate(input: TrailInput): ValidationResult {
   const errors: ValidationErrors = {};
   const name = input.name.trim();
-  if (!name) {
-    errors.name = "Trail name is required.";
-  } else if (name.length > MAX_NAME) {
-    errors.name = `Trail name must be ${MAX_NAME} characters or fewer.`;
-  }
-  const location = input.location.trim();
-  if (!location) {
-    errors.location = "Location is required.";
-  } else if (location.length > MAX_LOCATION) {
-    errors.location = `Location must be ${MAX_LOCATION} characters or fewer.`;
-  }
-  const distVal = parseFloat(input.distance);
-  if (input.distance.trim() === "" || isNaN(distVal)) {
-    errors.distance = "Distance is required and must be a number.";
-  } else if (distVal <= 0) {
-    errors.distance = "Distance must be greater than zero.";
-  } else if (distVal > MAX_DISTANCE) {
-    errors.distance = `Distance must be ${MAX_DISTANCE} or fewer.`;
-  }
-  if (!(UNITS as readonly string[]).includes(input.unit)) {
-    errors.unit = "Select a valid unit (mi or km).";
-  }
-  if (!(DIFFICULTIES as readonly string[]).includes(input.difficulty)) {
-    errors.difficulty = "Select a valid difficulty level.";
-  }
+  if (!name) errors.name = "Trail name is required.";
+  else if (name.length > 100) errors.name = "Trail name must be 100 characters or fewer.";
+
+  const loc = input.location.trim();
+  if (!loc) errors.location = "Location is required.";
+  else if (loc.length > 100) errors.location = "Location must be 100 characters or fewer.";
+
+  const d = parseFloat(input.distance);
+  if (!input.distance.trim() || isNaN(d)) errors.distance = "Distance is required and must be a number.";
+  else if (d <= 0) errors.distance = "Distance must be greater than zero.";
+  else if (d > 9999) errors.distance = "Distance must be 9999 or fewer.";
+
+  if (!UNITS.includes(input.unit as Unit)) errors.unit = "Select a valid unit (mi or km).";
+  if (!DIFFICULTIES.includes(input.difficulty as Difficulty)) errors.difficulty = "Select a valid difficulty level.";
+
   return { ok: Object.keys(errors).length === 0, errors };
 }
 
@@ -84,14 +69,14 @@ export function createItem(input: TrailInput, id: string, now: string): Trail {
     distance: parseFloat(input.distance),
     unit: input.unit as Unit,
     difficulty: input.difficulty as Difficulty,
-    notes: input.notes.trim().slice(0, MAX_NOTES),
-    status: (STATUSES as readonly string[]).includes(input.status) ? (input.status as Status) : "want",
+    notes: input.notes.trim().slice(0, 500),
+    status: STATUSES.includes(input.status as Status) ? (input.status as Status) : "want",
     createdAt: now,
   };
 }
 
 export function normalize(raw: unknown): Trail | null {
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const r = raw as Record<string, unknown>;
   const input: TrailInput = {
     name: typeof r.name === "string" ? r.name : "",
@@ -102,27 +87,20 @@ export function normalize(raw: unknown): Trail | null {
     notes: typeof r.notes === "string" ? r.notes : "",
     status: typeof r.status === "string" ? r.status : "want",
   };
-  const result = validate(input);
-  if (!result.ok) return null;
+  if (!validate(input).ok) return null;
   const id = typeof r.id === "string" && r.id.trim() ? r.id : "";
-  const createdAt = typeof r.createdAt === "string" ? r.createdAt : new Date().toISOString();
   if (!id) return null;
-  return createItem(input, id, createdAt);
+  return createItem(input, id, typeof r.createdAt === "string" ? r.createdAt : new Date().toISOString());
 }
 
 export function filterItems(items: Trail[], query: string): Trail[] {
   const q = query.trim().toLowerCase();
   if (!q) return items;
-  return items.filter(
-    (t) => t.name.toLowerCase().includes(q) || t.location.toLowerCase().includes(q) || t.notes.toLowerCase().includes(q)
-  );
+  return items.filter((t) => t.name.toLowerCase().includes(q) || t.location.toLowerCase().includes(q) || t.notes.toLowerCase().includes(q));
 }
 
 export function sortItems(items: Trail[]): Trail[] {
-  return [...items].sort((a, b) => {
-    if (a.status !== b.status) return a.status === "want" ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
+  return [...items].sort((a, b) => a.status !== b.status ? (a.status === "want" ? -1 : 1) : a.name.localeCompare(b.name));
 }
 
 export function formatDistance(distance: number, unit: Unit): string {
@@ -132,8 +110,7 @@ export function formatDistance(distance: number, unit: Unit): string {
 
 export function formatDate(iso: string): string {
   const d = new Date(iso);
-  if (isNaN(d.getTime())) return "Unknown date";
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return isNaN(d.getTime()) ? "Unknown date" : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 export interface Summary {
@@ -144,12 +121,9 @@ export interface Summary {
 }
 
 export function summarize(items: Trail[]): Summary {
-  const completed = items.filter((t) => t.status === "completed");
-  const mixedUnits = completed.length > 0 && completed.some((t) => t.unit !== completed[0].unit);
-  const unit = mixedUnits ? "mi" : completed.length > 0 ? completed[0].unit : "mi";
-  const totalDistance = completed.reduce((sum, t) => {
-    const d = t.unit === unit ? t.distance : t.unit === "km" ? t.distance * 0.621371 : t.distance / 0.621371;
-    return sum + d;
-  }, 0);
-  return { total: items.length, completed: completed.length, totalDistance: parseFloat(totalDistance.toFixed(1)), unit };
+  const done = items.filter((t) => t.status === "completed");
+  const mixed = done.length > 0 && done.some((t) => t.unit !== done[0].unit);
+  const unit = mixed ? "mi" : done.length > 0 ? done[0].unit : "mi";
+  const dist = done.reduce((sum, t) => sum + (t.unit === unit ? t.distance : t.unit === "km" ? t.distance * 0.621371 : t.distance / 0.621371), 0);
+  return { total: items.length, completed: done.length, totalDistance: parseFloat(dist.toFixed(1)), unit };
 }
