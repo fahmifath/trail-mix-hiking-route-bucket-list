@@ -1,12 +1,7 @@
-// ── domain.ts ─────────────────────────────────────────────────────────────
-// Pure functions only. No DOM, no localStorage, no new Date() without params.
-
 export const DIFFICULTIES = ["easy", "moderate", "hard", "epic"] as const;
 export type Difficulty = (typeof DIFFICULTIES)[number];
-
 export const STATUSES = ["want", "completed"] as const;
 export type Status = (typeof STATUSES)[number];
-
 export const UNITS = ["mi", "km"] as const;
 export type Unit = (typeof UNITS)[number];
 
@@ -52,21 +47,18 @@ const MAX_DISTANCE = 9999;
 
 export function validate(input: TrailInput): ValidationResult {
   const errors: ValidationErrors = {};
-
   const name = input.name.trim();
   if (!name) {
     errors.name = "Trail name is required.";
   } else if (name.length > MAX_NAME) {
     errors.name = `Trail name must be ${MAX_NAME} characters or fewer.`;
   }
-
   const location = input.location.trim();
   if (!location) {
     errors.location = "Location is required.";
   } else if (location.length > MAX_LOCATION) {
     errors.location = `Location must be ${MAX_LOCATION} characters or fewer.`;
   }
-
   const distVal = parseFloat(input.distance);
   if (input.distance.trim() === "" || isNaN(distVal)) {
     errors.distance = "Distance is required and must be a number.";
@@ -75,15 +67,12 @@ export function validate(input: TrailInput): ValidationResult {
   } else if (distVal > MAX_DISTANCE) {
     errors.distance = `Distance must be ${MAX_DISTANCE} or fewer.`;
   }
-
   if (!(UNITS as readonly string[]).includes(input.unit)) {
     errors.unit = "Select a valid unit (mi or km).";
   }
-
   if (!(DIFFICULTIES as readonly string[]).includes(input.difficulty)) {
     errors.difficulty = "Select a valid difficulty level.";
   }
-
   return { ok: Object.keys(errors).length === 0, errors };
 }
 
@@ -96,9 +85,7 @@ export function createItem(input: TrailInput, id: string, now: string): Trail {
     unit: input.unit as Unit,
     difficulty: input.difficulty as Difficulty,
     notes: input.notes.trim().slice(0, MAX_NOTES),
-    status: (STATUSES as readonly string[]).includes(input.status)
-      ? (input.status as Status)
-      : "want",
+    status: (STATUSES as readonly string[]).includes(input.status) ? (input.status as Status) : "want",
     createdAt: now,
   };
 }
@@ -127,18 +114,13 @@ export function filterItems(items: Trail[], query: string): Trail[] {
   const q = query.trim().toLowerCase();
   if (!q) return items;
   return items.filter(
-    (t) =>
-      t.name.toLowerCase().includes(q) ||
-      t.location.toLowerCase().includes(q) ||
-      t.notes.toLowerCase().includes(q)
+    (t) => t.name.toLowerCase().includes(q) || t.location.toLowerCase().includes(q) || t.notes.toLowerCase().includes(q)
   );
 }
 
 export function sortItems(items: Trail[]): Trail[] {
   return [...items].sort((a, b) => {
-    if (a.status !== b.status) {
-      return a.status === "want" ? -1 : 1;
-    }
+    if (a.status !== b.status) return a.status === "want" ? -1 : 1;
     return a.name.localeCompare(b.name);
   });
 }
@@ -169,10 +151,5 @@ export function summarize(items: Trail[]): Summary {
     const d = t.unit === unit ? t.distance : t.unit === "km" ? t.distance * 0.621371 : t.distance / 0.621371;
     return sum + d;
   }, 0);
-  return {
-    total: items.length,
-    completed: completed.length,
-    totalDistance: parseFloat(totalDistance.toFixed(1)),
-    unit,
-  };
+  return { total: items.length, completed: completed.length, totalDistance: parseFloat(totalDistance.toFixed(1)), unit };
 }

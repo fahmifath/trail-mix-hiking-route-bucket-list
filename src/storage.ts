@@ -1,7 +1,3 @@
-// ── storage.ts ─────────────────────────────────────────────────────────────
-// Single choke point for all localStorage access.
-// No DOM access. No duplicate validation — uses normalize() from domain.ts.
-
 import { normalize } from "./domain.js";
 import type { Trail } from "./domain.js";
 
@@ -30,22 +26,14 @@ export function load(): LoadResult {
     let rejected = 0;
     for (const item of parsed) {
       const trail = normalize(item);
-      if (trail) {
-        valid.push(trail);
-      } else {
-        rejected++;
-      }
+      if (trail) { valid.push(trail); } else { rejected++; }
     }
     if (valid.length === 0 && parsed.length === 0) return { status: "empty" };
     if (rejected > 0 && valid.length === 0) {
       return { status: "error", message: `All ${rejected} saved trail(s) were corrupted. Starting fresh.` };
     }
     if (rejected > 0) {
-      return {
-        status: "partial",
-        items: valid,
-        message: `${rejected} corrupted trail record(s) were removed.`,
-      };
+      return { status: "partial", items: valid, message: `${rejected} corrupted trail record(s) were removed.` };
     }
     return { status: "ok", items: valid };
   } catch (e) {
@@ -54,10 +42,7 @@ export function load(): LoadResult {
   }
 }
 
-export interface SaveResult {
-  ok: boolean;
-  message?: string;
-}
+export interface SaveResult { ok: boolean; message?: string; }
 
 export function save(items: Trail[]): SaveResult {
   try {
