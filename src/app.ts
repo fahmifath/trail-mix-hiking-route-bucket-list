@@ -11,21 +11,14 @@ let editingId: string | null = null;
 let armedDeleteId: string | null = null;
 let armedDeleteTimer: ReturnType<typeof setTimeout> | null = null;
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className?: string,
-  text?: string
-): HTMLElementTagNameMap[K] {
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
-  if (className) e.className = className;
+  if (cls) e.className = cls;
   if (text != null) e.textContent = text;
   return e;
 }
-
-function $(id: string): HTMLElement {
-  return document.getElementById(id)!;
-}
+const $ = (id: string): HTMLElement => document.getElementById(id)!;
+const fld = (form: HTMLFormElement, name: string) => form.elements.namedItem(name) as HTMLInputElement;
 
 function announce(text: string): void {
   const region = $("live-region");
@@ -44,30 +37,23 @@ function clearBanner(): void {
   banner.hidden = true;
   banner.textContent = "";
 }
+
 export function init(): void {
   const result = load();
-  switch (result.status) {
-    case "ok":
-      items = result.items;
-      clearBanner();
-      break;
-    case "empty":
-      items = [];
-      clearBanner();
-      break;
-    case "partial":
-      items = result.items;
-      reportFailure(result.message);
-      break;
-    case "error":
-      items = [];
-      reportFailure(result.message);
-      break;
+  if (result.status === "ok" || result.status === "empty") {
+    items = result.status === "ok" ? result.items : [];
+    clearBanner();
+  } else if (result.status === "partial") {
+    items = result.items;
+    reportFailure(result.message);
+  } else {
+    items = [];
+    reportFailure(result.message);
   }
-
   wireEvents();
   render();
 }
+
 function clearDeleteArm(): void {
   if (armedDeleteTimer !== null) { clearTimeout(armedDeleteTimer); armedDeleteTimer = null; }
   armedDeleteId = null;
@@ -77,12 +63,11 @@ function revertDeleteButton(btn: HTMLButtonElement): void {
   btn.setAttribute("aria-label", "Delete trail");
   btn.classList.remove("btn-arm");
 }
+
 function render(): void {
   clearDeleteArm();
-
   const filtered = filterItems(items, filterQuery);
   const sorted = sortItems(filtered);
-
   renderSummary();
   renderList(sorted, items.length === 0, filtered.length === 0 && items.length > 0);
   renderFormState();
@@ -97,67 +82,57 @@ function renderSummary(): void {
 
 function renderList(sorted: Trail[], isEmpty: boolean, isFilterEmpty: boolean): void {
   const list = $("trail-list");
-  const emptyAll = $("empty-all");
-  const emptyFilter = $("empty-filter");
   list.innerHTML = "";
-
-  if (isEmpty) {
-    emptyAll.hidden = false;
-    emptyFilter.hidden = true;
-    return;
-  }
-  emptyAll.hidden = true;
-
+  $("empty-all").hidden = !isEmpty;
+  const emptyFilter = $("empty-filter");
   if (isFilterEmpty) {
     emptyFilter.hidden = false;
     ($("empty-filter-query") as HTMLElement).textContent = `"${filterQuery}"`;
     return;
   }
   emptyFilter.hidden = true;
-
-  for (const trail of sorted) {
-    list.appendChild(createCard(trail));
+  if (!isEmpty) {
+    for (const trail of sorted) list.appendChild(createCard(trail));
   }
 }
 
 function createCard(trail: Trail): HTMLElement {
-  const isCompleted = trail.status === "completed";
-  const card = el("article", `trail-card${isCompleted ? " trail-card--completed" : ""}`);
+  const isDone = trail.status === "completed";
+  const card = el("article", `trail-card${isDone ? " trail-card--completed" : ""}`);
   card.dataset.id = trail.id;
-  const badge = el("span", `status-badge status-badge--${trail.status}`, isCompleted ? "✓ Completed" : "⛰ Want to Hike");
-  const diff = el("span", `diff-badge diff-badge--${trail.difficulty}`, trail.difficulty);
+
   const badges = el("div", "card-badges");
-  badges.appendChild(badge);
-  badges.appendChild(diff);
-  const title = el("h2", "card-title", trail.name);
-  if (isCompleted) title.classList.add("card-title--done");
+  badges.appendChild(el("span", `status-badge status-badge--${trail.status}`, isDone ? "✓ Completed" : "⛰ Want to Hike"));
+  badges.appendChild(el("span", `diff-badge diff-badge--${trail.difficulty}`, trail.difficulty));
+
+  const title = el("h2", `card-title${isDone ? " card-title--done" : ""}`, trail.name);
+
   const meta = el("div", "card-meta");
-  const locSpan = el("span", "card-loc");
-  const pinSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  pinSvg.setAttribute("width", "14"); pinSvg.setAttribute("height", "14");
-  pinSvg.setAttribute("viewBox", "0 0 24 24"); pinSvg.setAttribute("aria-hidden", "true");
-  pinSvg.setAttribute("fill", "currentColor");
-  pinSvg.innerHTML = '<path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>';
-  locSpan.appendChild(pinSvg);
-  locSpan.appendChild(document.createTextNode(" " + trail.location));
-  const distSpan = el("span", "card-dist", formatDistance(trail.distance, trail.unit));
-  const dateSpan = el("span", "card-date", formatDate(trail.createdAt));
-  meta.appendChild(locSpan); meta.appendChild(distSpan); meta.appendChild(dateSpan);
+  const loc = el("span", "card-loc");
+  loc.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg> `;
+  loc.appendChild(document.createTextNode(trail.location));
+  meta.appendChild(loc);
+  meta.appendChild(el("span", "card-dist", formatDistance(trail.distance, trail.unit)));
+  meta.appendChild(el("span", "card-date", formatDate(trail.createdAt)));
+
   const actions = el("div", "card-actions");
   const editBtn = el("button", "btn btn-secondary", "Edit");
   editBtn.type = "button";
   editBtn.setAttribute("aria-label", `Edit ${trail.name}`);
   editBtn.addEventListener("click", () => startEdit(trail.id));
-  const toggleBtn = el("button", "btn btn-ghost", isCompleted ? "Mark Pending" : "Mark Complete");
+
+  const toggleBtn = el("button", "btn btn-ghost", isDone ? "Mark Pending" : "Mark Complete");
   toggleBtn.type = "button";
-  toggleBtn.setAttribute("aria-label", isCompleted ? `Mark ${trail.name} as pending` : `Mark ${trail.name} as complete`);
+  toggleBtn.setAttribute("aria-label", isDone ? `Mark ${trail.name} pending` : `Mark ${trail.name} complete`);
   toggleBtn.addEventListener("click", () => toggleStatus(trail.id));
+
   const deleteBtn = el("button", "btn btn-danger", "Delete");
   deleteBtn.type = "button";
   deleteBtn.setAttribute("aria-label", `Delete ${trail.name}`);
   deleteBtn.addEventListener("click", () => handleDelete(trail.id, deleteBtn));
-  actions.appendChild(editBtn); actions.appendChild(toggleBtn); actions.appendChild(deleteBtn);
-  card.appendChild(badges); card.appendChild(title); card.appendChild(meta);
+
+  actions.append(editBtn, toggleBtn, deleteBtn);
+  card.append(badges, title, meta);
   if (trail.notes) card.appendChild(el("p", "card-notes", trail.notes));
   card.appendChild(actions);
   if (editingId === trail.id) card.classList.add("trail-card--editing");
@@ -166,31 +141,28 @@ function createCard(trail: Trail): HTMLElement {
 
 function renderFormState(): void {
   const form = $("trail-form") as HTMLFormElement;
-  const heading = $("form-heading");
-  const cancelBtn = $("cancel-edit-btn");
-  const submitBtn = $("submit-btn");
-  if (editingId !== null) {
-    const trail = items.find((t) => t.id === editingId);
-    if (trail) {
-      heading.textContent = "Edit Trail";
-      submitBtn.textContent = "Save Changes";
-      cancelBtn.hidden = false;
-      (form.elements.namedItem("name") as HTMLInputElement).value = trail.name;
-      (form.elements.namedItem("location") as HTMLInputElement).value = trail.location;
-      (form.elements.namedItem("distance") as HTMLInputElement).value = String(trail.distance);
-      (form.elements.namedItem("unit") as HTMLSelectElement).value = trail.unit;
-      (form.elements.namedItem("difficulty") as HTMLSelectElement).value = trail.difficulty;
-      (form.elements.namedItem("notes") as HTMLTextAreaElement).value = trail.notes;
-      (form.elements.namedItem("status") as HTMLSelectElement).value = trail.status;
+  const isEditing = editingId !== null;
+  $("form-heading").textContent = isEditing ? "Edit Trail" : "Add a Trail";
+  $("submit-btn").textContent = isEditing ? "Save Changes" : "Add Trail";
+  $("cancel-edit-btn").hidden = !isEditing;
+
+  if (isEditing) {
+    const t = items.find((x) => x.id === editingId);
+    if (t) {
+      fld(form, "name").value = t.name;
+      fld(form, "location").value = t.location;
+      fld(form, "distance").value = String(t.distance);
+      fld(form, "unit").value = t.unit;
+      fld(form, "difficulty").value = t.difficulty;
+      (form.elements.namedItem("notes") as HTMLTextAreaElement).value = t.notes;
+      fld(form, "status").value = t.status;
     }
   } else {
-    heading.textContent = "Add a Trail";
-    submitBtn.textContent = "Add Trail";
-    cancelBtn.hidden = true;
     form.reset();
     clearFieldErrors();
   }
 }
+
 function wireEvents(): void {
   const form = $("trail-form") as HTMLFormElement;
   form.addEventListener("submit", (e) => { e.preventDefault(); handleFormSubmit(form); });
@@ -198,24 +170,25 @@ function wireEvents(): void {
   $("search-input").addEventListener("input", (e) => {
     filterQuery = (e.target as HTMLInputElement).value;
     render();
-    const filtered = filterItems(items, filterQuery);
-    if (filterQuery && filtered.length === 0) announce(`No trails found for "${filterQuery}".`);
+    if (filterQuery && filterItems(items, filterQuery).length === 0) announce(`No trails found for "${filterQuery}".`);
   });
   $("clear-filter-btn").addEventListener("click", () => {
-    filterQuery = ""; ($("search-input") as HTMLInputElement).value = "";
-    render(); announce("Filter cleared.");
+    filterQuery = "";
+    ($("search-input") as HTMLInputElement).value = "";
+    render();
+    announce("Filter cleared.");
   });
   $("dismiss-banner-btn").addEventListener("click", clearBanner);
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && armedDeleteId !== null) {
       document.querySelectorAll(".btn-arm").forEach((b) => revertDeleteButton(b as HTMLButtonElement));
-      clearDeleteArm(); announce("Delete cancelled.");
+      clearDeleteArm();
+      announce("Delete cancelled.");
     }
   });
   document.addEventListener("click", (e) => {
     if (armedDeleteId === null) return;
-    const target = e.target as HTMLElement;
-    if (!target.closest(`[data-id="${armedDeleteId}"] .btn-danger`)) {
+    if (!(e.target as HTMLElement).closest(`[data-id="${armedDeleteId}"] .btn-danger`)) {
       document.querySelectorAll(".btn-arm").forEach((b) => revertDeleteButton(b as HTMLButtonElement));
       clearDeleteArm();
     }
@@ -226,6 +199,7 @@ function clearFieldErrors(): void {
   document.querySelectorAll(".field-error").forEach((e) => { (e as HTMLElement).textContent = ""; });
   document.querySelectorAll("[aria-invalid]").forEach((e) => { e.removeAttribute("aria-invalid"); });
 }
+
 function showFieldErrors(errors: Record<string, string>): void {
   clearFieldErrors();
   for (const [field, msg] of Object.entries(errors)) {
@@ -240,45 +214,36 @@ function showFieldErrors(errors: Record<string, string>): void {
 
 function handleFormSubmit(form: HTMLFormElement): void {
   const input: TrailInput = {
-    name: (form.elements.namedItem("name") as HTMLInputElement).value,
-    location: (form.elements.namedItem("location") as HTMLInputElement).value,
-    distance: (form.elements.namedItem("distance") as HTMLInputElement).value,
-    unit: (form.elements.namedItem("unit") as HTMLSelectElement).value,
-    difficulty: (form.elements.namedItem("difficulty") as HTMLSelectElement).value,
+    name: fld(form, "name").value,
+    location: fld(form, "location").value,
+    distance: fld(form, "distance").value,
+    unit: fld(form, "unit").value,
+    difficulty: fld(form, "difficulty").value,
     notes: (form.elements.namedItem("notes") as HTMLTextAreaElement).value,
-    status: (form.elements.namedItem("status") as HTMLSelectElement).value,
+    status: fld(form, "status").value,
   };
-
   const result = validate(input);
   if (!result.ok) {
     showFieldErrors(result.errors as Record<string, string>);
     return;
   }
-
   clearFieldErrors();
 
   if (editingId !== null) {
     const updated = createItem(input, editingId, items.find((t) => t.id === editingId)?.createdAt ?? new Date().toISOString());
     const newItems = items.map((t) => (t.id === editingId ? updated : t));
     const saveResult = save(newItems);
-    if (!saveResult.ok) {
-      reportFailure(saveResult.message ?? "Could not save changes.");
-      return;
-    }
+    if (!saveResult.ok) { reportFailure(saveResult.message ?? "Could not save changes."); return; }
     items = newItems;
     editingId = null;
     render();
     announce(`Trail "${updated.name}" updated successfully.`);
   } else {
     const id = `trail-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const now = new Date().toISOString();
-    const newTrail = createItem(input, id, now);
+    const newTrail = createItem(input, id, new Date().toISOString());
     const newItems = [...items, newTrail];
     const saveResult = save(newItems);
-    if (!saveResult.ok) {
-      reportFailure(saveResult.message ?? "Could not save trail.");
-      return;
-    }
+    if (!saveResult.ok) { reportFailure(saveResult.message ?? "Could not save trail."); return; }
     items = newItems;
     render();
     announce(`Trail "${newTrail.name}" added to your list.`);
@@ -286,15 +251,17 @@ function handleFormSubmit(form: HTMLFormElement): void {
     if (newCard) newCard.classList.add("card-enter");
   }
 }
+
 function startEdit(id: string): void {
   editingId = id;
   render();
   const form = $("trail-form") as HTMLFormElement;
   form.scrollIntoView({ behavior: "smooth", block: "start" });
-  (form.elements.namedItem("name") as HTMLInputElement).focus();
+  fld(form, "name").focus();
   const trail = items.find((t) => t.id === id);
   if (trail) announce(`Editing trail: ${trail.name}`);
 }
+
 function toggleStatus(id: string): void {
   const trail = items.find((t) => t.id === id);
   if (!trail) return;
@@ -302,10 +269,7 @@ function toggleStatus(id: string): void {
   const updated = { ...trail, status: newStatus } as Trail;
   const newItems = items.map((t) => (t.id === id ? updated : t));
   const saveResult = save(newItems);
-  if (!saveResult.ok) {
-    reportFailure(saveResult.message ?? "Could not update trail status.");
-    return;
-  }
+  if (!saveResult.ok) { reportFailure(saveResult.message ?? "Could not update trail status."); return; }
   items = newItems;
   render();
   announce(`"${trail.name}" marked as ${newStatus === "completed" ? "completed" : "want to hike"}.`);
@@ -319,7 +283,8 @@ function handleDelete(id: string, btn: HTMLButtonElement): void {
     const saveResult = save(newItems);
     if (!saveResult.ok) {
       reportFailure(saveResult.message ?? "Could not delete trail.");
-      clearDeleteArm(); revertDeleteButton(btn);
+      clearDeleteArm();
+      revertDeleteButton(btn);
       return;
     }
     items = newItems;
@@ -336,7 +301,9 @@ function handleDelete(id: string, btn: HTMLButtonElement): void {
     btn.setAttribute("aria-label", "Confirm delete — click again to confirm");
     btn.classList.add("btn-arm");
     armedDeleteTimer = setTimeout(() => {
-      revertDeleteButton(btn); clearDeleteArm(); announce("Delete cancelled.");
+      revertDeleteButton(btn);
+      clearDeleteArm();
+      announce("Delete cancelled.");
     }, 3000);
     announce("Delete armed. Click again to confirm, or press Escape to cancel.");
   }
